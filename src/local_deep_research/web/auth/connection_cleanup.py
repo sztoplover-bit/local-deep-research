@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
 
 from ...database.session_passwords import session_password_store
-from ...web.routes.globals import get_usernames_with_active_research
+from ...web.state import get_usernames_with_active_research
 
 
 def cleanup_idle_connections(session_manager, db_manager):
