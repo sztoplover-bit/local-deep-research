@@ -39,7 +39,7 @@ optimal experience when JavaScript is available.
 """
 
 import platform
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 from datetime import datetime, UTC, timedelta
 
 import requests
@@ -67,8 +67,10 @@ from ..utils.rate_limiter import settings_limit
 from ...settings import SettingsManager
 from ...settings.manager import get_typed_setting_value, parse_boolean
 from ..services.settings_service import (
+    DYNAMIC_SETTINGS,
     create_or_update_setting,
     set_setting,
+    validate_setting,
 )
 from ..utils.templates import render_template_with_defaults
 
@@ -82,9 +84,6 @@ settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
 # NOTE: Routes use session["username"] (not .get()) intentionally.
 # @login_required guarantees the key exists; direct access fails fast
 # if the decorator is ever removed.
-
-# Settings with dynamically populated options (excluded from validation)
-DYNAMIC_SETTINGS = ["llm.provider", "llm.model", "search.tool"]
 
 # Security: Block modification of settings that could enable code execution
 # These patterns match setting keys that could be used for dynamic imports
@@ -149,64 +148,6 @@ def _get_setting_from_session(key: str, default=None):
             settings_manager = get_settings_manager(db_session, username)
             return settings_manager.get_setting(key, default)
     return default
-
-
-def validate_setting(
-    setting: Setting, value: Any
-) -> Tuple[bool, Optional[str]]:
-    """
-    Validate a setting value based on its type and constraints.
-
-    Args:
-        setting: The Setting object to validate against
-        value: The value to validate
-
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    # Convert value to appropriate type first using SettingsManager's logic
-    value = get_typed_setting_value(
-        key=setting.key,
-        value=value,
-        ui_element=setting.ui_element,
-        default=None,
-        check_env=False,
-    )
-
-    # Validate based on UI element type
-    if setting.ui_element == "checkbox":
-        # After conversion, should be boolean
-        if not isinstance(value, bool):
-            return False, "Value must be a boolean"
-
-    elif setting.ui_element in ("number", "slider", "range"):
-        # After conversion, should be numeric
-        if not isinstance(value, (int, float)):
-            return False, "Value must be a number"
-
-        # Check min/max constraints if defined
-        if setting.min_value is not None and value < setting.min_value:
-            return False, f"Value must be at least {setting.min_value}"
-        if setting.max_value is not None and value > setting.max_value:
-            return False, f"Value must be at most {setting.max_value}"
-
-    elif setting.ui_element == "select":
-        # Check if value is in the allowed options
-        if setting.options:
-            # Skip options validation for dynamically populated dropdowns
-            if setting.key not in DYNAMIC_SETTINGS:
-                allowed_values = [
-                    opt.get("value") if isinstance(opt, dict) else opt
-                    for opt in setting.options
-                ]
-                if value not in allowed_values:
-                    return (
-                        False,
-                        f"Value must be one of: {', '.join(str(v) for v in allowed_values)}",
-                    )
-
-    # All checks passed
-    return True, None
 
 
 def coerce_setting_for_write(key: str, value: Any, ui_element: str) -> Any:
